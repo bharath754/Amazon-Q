@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Merger</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <h2 class="nav-logo">PDF Merger</h2>
+            <ul class="nav-menu">
+                <li><a href="#" class="active">Home</a></li>
+                <li><a href="#" onclick="openAboutModal()">About</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="page-container">
+        <div class="intro-section">
+            <h2>Merge PDF Files Online</h2>
+            <p>Combine multiple PDF documents into one file. Simply upload your PDFs, reorder them as needed, and download your merged document.</p>
+        </div>
+        
+        <div class="container">
+        <h1>PDF Merger</h1>
+        
+        <div class="upload-area">
+            <p>Drag & Drop or Click to Upload PDFs</p>
+            <input type="file" id="pdfInput" multiple accept=".pdf">
+        </div>
+        
+        <div id="fileList" class="file-list"></div>
+        
+
+        
+        <button id="mergeBtn" class="merge-btn">Merge PDFs</button>
+        
+        <div id="status" class="status"></div>
+        
+        <button id="downloadBtn" class="download-btn" style="display: none;">Download Merged PDF</button>
+        </div>
+        
+        <footer class="phoenix-credit">
+            <p>PHOENIX'S</p>
+        </footer>
+    </div>
+    
+    <!-- About Modal -->
+    <div id="aboutModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">About PDF Merger</h2>
+                <button class="modal-close" onclick="closeModal('aboutModal')">&times;</button>
+            </div>
+            <div class="about-content">
+                <p>PDF Merger is a simple, secure web application that allows you to combine multiple PDF files into a single document.</p>
+                <h3>Features:</h3>
+                <ul>
+                    <li>Merge multiple PDF files instantly</li>
+                    <li>Drag and drop file reordering</li>
+                    <li>Client-side processing for privacy</li>
+                    <li>No file size limits</li>
+                    <li>Works entirely in your browser</li>
+                </ul>
+                <p>All processing happens locally in your browser - your files never leave your device.</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Progress Modal -->
+    <div id="progressModal" class="modal">
+        <div class="modal-content progress-modal">
+            <div id="progressState">
+                <h3>Merging PDFs</h3>
+                <p class="status-text">Processing your files...</p>
+                <div class="progress-bar">
+                    <div id="modalProgressFill" class="progress-fill"></div>
+                </div>
+                <p id="modalProgressText">0%</p>
+            </div>
+            <div id="successState" class="success-state" style="display: none;">
+                <div class="success-icon">✓</div>
+                <h3>Success!</h3>
+                <p>Your PDF is ready for download.</p>
+                <div class="success-actions">
+                    <button id="modalDownloadBtn" class="download-btn">Download PDF</button>
+                    <button id="modalShareBtn" class="share-btn">Share PDF</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let uploadedFiles = [];
+        let mergedPdfBytes = null;
+        
+        const fileInput = document.getElementById('pdfInput');
+        const fileList = document.getElementById('fileList');
+        const mergeBtn = document.getElementById('mergeBtn');
+        const status = document.getElementById('status');
+        const downloadBtn = document.getElementById('downloadBtn');
+        
+        fileInput.addEventListener('change', handleFiles);
+        mergeBtn.addEventListener('click', mergePDFs);
+        downloadBtn.addEventListener('click', downloadMergedPDF);
+        
+        function handleFiles(e) {
+            uploadedFiles = Array.from(e.target.files);
+            displayFiles();
+        }
+        
+        function displayFiles() {
+            fileList.innerHTML = uploadedFiles.map((file, index) => 
+                `<div class="file-item" draggable="true" data-index="${index}">
+                    <span class="drag-handle">⋮⋮</span>
+                    <div class="file-info">
+                        <span class="file-name">${file.name}</span>
+                        <span class="file-size">${formatFileSize(file.size)}</span>
+                    </div>
+                    <div class="file-preview" onclick="previewFile(${index})">
+                        <span class="preview-icon">👁</span>
+                    </div>
+                </div>`
+            ).join('');
+            addDragListeners();
+        }
+        
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+        
+        function previewFile(index) {
+            const file = uploadedFiles[index];
+            const url = URL.createObjectURL(file);
+            window.open(url, '_blank');
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
+        
+        function addDragListeners() {
+            const items = fileList.querySelectorAll('.file-item');
+            items.forEach(item => {
+                item.addEventListener('dragstart', handleDragStart);
+                item.addEventListener('dragover', handleDragOver);
+                item.addEventListener('drop', handleDrop);
+                item.addEventListener('dragend', handleDragEnd);
+            });
+        }
+        
+        let draggedIndex = null;
+        
+        function handleDragStart(e) {
+            draggedIndex = parseInt(e.target.dataset.index);
+            e.target.classList.add('dragging');
+        }
+        
+        function handleDragOver(e) {
+            e.preventDefault();
+        }
+        
+        function handleDrop(e) {
+            e.preventDefault();
+            const dropIndex = parseInt(e.target.dataset.index);
+            if (draggedIndex !== null && draggedIndex !== dropIndex) {
+                const draggedFile = uploadedFiles[draggedIndex];
+                uploadedFiles.splice(draggedIndex, 1);
+                uploadedFiles.splice(dropIndex, 0, draggedFile);
+                displayFiles();
+            }
+        }
+        
+        function handleDragEnd(e) {
+            e.target.classList.remove('dragging');
+            draggedIndex = null;
+        }
+        
+        async function mergePDFs() {
+            if (uploadedFiles.length < 2) {
+                showStatus('Please select at least 2 PDF files', 'error');
+                return;
+            }
+            
+            openProgressModal();
+            
+            try {
+                const mergedPdf = await PDFLib.PDFDocument.create();
+                
+                for (let i = 0; i < uploadedFiles.length; i++) {
+                    const file = uploadedFiles[i];
+                    const arrayBuffer = await file.arrayBuffer();
+                    const pdf = await PDFLib.PDFDocument.load(arrayBuffer);
+                    const pages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
+                    pages.forEach(page => mergedPdf.addPage(page));
+                    
+                    const progress = ((i + 1) / uploadedFiles.length) * 100;
+                    updateModalProgress(progress);
+                }
+                
+                mergedPdfBytes = await mergedPdf.save();
+                showSuccessState();
+            } catch (error) {
+                closeModal('progressModal');
+                showStatus('Error merging PDFs. Please try again.', 'error');
+            }
+        }
+        
+
+        
+        function downloadMergedPDF() {
+            const blob = new Blob([mergedPdfBytes], { type: 'application/pdf' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'merged.pdf';
+            a.click();
+            URL.revokeObjectURL(url);
+            
+            closeModal('progressModal');
+            showStatus('PDF downloaded successfully!', 'success');
+        }
+        
+        async function shareMergedPDF() {
+            if (!navigator.share) {
+                showStatus('Share not supported on this device', 'error');
+                return;
+            }
+            
+            try {
+                const blob = new Blob([mergedPdfBytes], { type: 'application/pdf' });
+                const file = new File([blob], 'merged.pdf', { type: 'application/pdf' });
+                
+                await navigator.share({
+                    title: 'Merged PDF',
+                    text: 'Check out this merged PDF file',
+                    files: [file]
+                });
+                
+                closeModal('progressModal');
+                showStatus('PDF shared successfully!', 'success');
+            } catch (error) {
+                if (error.name !== 'AbortError') {
+                    showStatus('Error sharing PDF', 'error');
+                }
+            }
+        }
+        
+        function openAboutModal() {
+            document.getElementById('aboutModal').classList.add('show');
+        }
+        
+        function openProgressModal() {
+            document.getElementById('progressState').style.display = 'block';
+            document.getElementById('successState').style.display = 'none';
+            document.getElementById('progressModal').classList.add('show');
+            updateModalProgress(0);
+        }
+        
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('show');
+        }
+        
+        function updateModalProgress(percent) {
+            document.getElementById('modalProgressFill').style.width = percent + '%';
+            document.getElementById('modalProgressText').textContent = Math.round(percent) + '%';
+        }
+        
+        function showSuccessState() {
+            document.getElementById('progressState').style.display = 'none';
+            document.getElementById('successState').style.display = 'block';
+        }
+        
+        document.getElementById('modalDownloadBtn').addEventListener('click', downloadMergedPDF);
+        document.getElementById('modalShareBtn').addEventListener('click', shareMergedPDF);
+        
+        // Close modals when clicking outside
+        window.addEventListener('click', function(e) {
+            if (e.target.classList.contains('modal')) {
+                e.target.classList.remove('show');
+            }
+        });
+        
+        function showStatus(message, type) {
+            status.textContent = message;
+            status.className = `status ${type}`;
+        }
+    </script>
+</body>
+</html>
